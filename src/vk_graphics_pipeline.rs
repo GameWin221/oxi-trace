@@ -9,11 +9,19 @@ use crate::{
 
 pub struct VkGraphicsPipeline {
     pub handle: vk::Pipeline,  
-    layout: vk::PipelineLayout
+    pub layout: vk::PipelineLayout
 }
 
 impl VkGraphicsPipeline {
-    pub fn new(device: &ash::Device, vert_shader_path: Option<&str>, frag_shader_path: Option<&str>, use_vertex_input: bool, render_pass: &VkRenderPass) -> Self {
+    pub fn new(
+        device: &ash::Device,
+        vert_shader_path: Option<&str>,
+        frag_shader_path: Option<&str>,
+        use_vertex_input: bool,
+        render_pass: &VkRenderPass,
+        descriptor_set_layouts: &Vec<vk::DescriptorSetLayout>,
+        push_constant_ranges: &Vec<vk::PushConstantRange>,
+    ) -> Self {
         let mut shader_stages = Vec::new();
         let mut shader_modules = Vec::new();
         
@@ -195,10 +203,10 @@ impl VkGraphicsPipeline {
             s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
             p_next: ptr::null(),
             flags: vk::PipelineLayoutCreateFlags::empty(),
-            set_layout_count: 0,
-            p_set_layouts: ptr::null(),
-            push_constant_range_count: 0,
-            p_push_constant_ranges: ptr::null(),
+            set_layout_count: descriptor_set_layouts.len() as u32,
+            p_set_layouts: descriptor_set_layouts.as_ptr(),
+            push_constant_range_count: push_constant_ranges.len() as u32,
+            p_push_constant_ranges: push_constant_ranges.as_ptr(),
         };
 
         let pipeline_layout = unsafe {

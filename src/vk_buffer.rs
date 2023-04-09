@@ -4,6 +4,7 @@ use gpu_allocator::vulkan::*;
 use gpu_allocator::MemoryLocation;
 
 use crate::vk_command_pool::VkCommandBuffer;
+use crate::vk_texture::VkTexture;
 
 #[derive(Debug)]
 pub struct VkBuffer {
@@ -60,13 +61,38 @@ impl VkBuffer {
             std::ptr::copy_nonoverlapping(data.as_ptr(), dst_ptr, data.len());
         }
     }
-    pub fn copy_to(&mut self, command_buffer: &VkCommandBuffer, other: &Self, device: &ash::Device) {
+    
+    pub fn copy_to_buffer(&mut self, command_buffer: &VkCommandBuffer, other: &Self, device: &ash::Device) {
         unsafe {
             device.cmd_copy_buffer(command_buffer.handle, self.handle, other.handle, &[vk::BufferCopy{
                 src_offset: 0,
                 dst_offset: 0,
                 size: self.size,
             }]);
+        }
+    }
+    pub fn copy_to_image(&mut self, command_buffer: &VkCommandBuffer, other: &VkTexture, device: &ash::Device) {
+        let buffer_image_regions = [vk::BufferImageCopy::builder()
+        .image_subresource(vk::ImageSubresourceLayers {
+            aspect_mask: vk::ImageAspectFlags::COLOR,
+            mip_level: 0,
+            base_array_layer: 0,
+            layer_count: 1,
+        })
+        .image_extent(vk::Extent3D {
+            width: other.extent.width,
+            height: other.extent.height,
+            depth: 1,
+        }).build()];
+    
+        unsafe {
+            device.cmd_copy_buffer_to_image(
+                command_buffer.handle,
+                self.handle,
+                other.handle,
+                other.layout,
+                &buffer_image_regions,
+            );
         }
     }
 }

@@ -7,6 +7,7 @@ use crate::{
     vk_surface::*,
     vk_queue::*,
     vk_command_pool::*,
+    vk_descriptor_pool::*,
 };
 
 use gpu_allocator::vulkan::*;
@@ -22,8 +23,6 @@ pub const ENGINE_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
 pub const API_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
 
 pub const WINDOW_TITLE: &'static str = "OxiTrace";
-pub const WINDOW_WIDTH: u32 = 800;
-pub const WINDOW_HEIGHT: u32 = 600;
 
 pub struct VkContext {
     pub entry: ash::Entry,
@@ -42,6 +41,8 @@ pub struct VkContext {
 
     pub graphics_command_pool: VkCommandPool,
     pub transfer_command_pool: VkCommandPool,
+
+    pub descriptor_pool: VkDescriptorPool
 }
 
 impl VkContext {
@@ -69,6 +70,8 @@ impl VkContext {
             buffer_device_address: true,
         }).expect("Failed to create a Vulkan Memory Allocator");
 
+        let descriptor_pool = VkDescriptorPool::new(&device);
+
         VkContext { 
             entry, 
             instance,
@@ -85,7 +88,9 @@ impl VkContext {
             transfer_queue,
 
             graphics_command_pool,
-            transfer_command_pool
+            transfer_command_pool,
+
+            descriptor_pool
         }
     }
 
@@ -181,11 +186,12 @@ impl VkContext {
         }
 
         let physical_device_features = vk::PhysicalDeviceFeatures {
+            sampler_anisotropy: 1,
             ..Default::default()
         };
         let physical_device_buffer_features = vk::PhysicalDeviceBufferDeviceAddressFeatures {
             s_type: vk::StructureType::PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES,
-            p_next: ptr::null_mut(),
+            p_next: std::ptr::null_mut(),
             buffer_device_address: 1,
             buffer_device_address_capture_replay: 0,
             buffer_device_address_multi_device: 0,
@@ -240,6 +246,8 @@ impl VkContext {
 impl Drop for VkContext {
     fn drop(&mut self) {
         unsafe {
+            self.descriptor_pool.destroy(&self.device);
+
             self.graphics_command_pool.destroy(&self.device);
             self.transfer_command_pool.destroy(&self.device);
 

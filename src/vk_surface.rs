@@ -10,9 +10,15 @@ pub struct VkSurface {
 impl VkSurface {
     pub fn new(entry: &ash::Entry, instance: &ash::Instance, window: &winit::window::Window) -> Self {
         let surface = unsafe {
-            ash_window::create_surface(entry, instance, window.raw_display_handle(), window.raw_window_handle(), None)
-                .expect("Failed to create surface.")   
+            ash_window::create_surface(
+                entry,
+                instance,
+                window.raw_display_handle(),
+                window.raw_window_handle(),
+                None
+            ).expect("Failed to create surface.")   
         };
+        
         let surface_loader = ash::extensions::khr::Surface::new(entry, instance);
 
         VkSurface {

@@ -9,7 +9,7 @@ use crate::{
 };
 
 pub const DEVICE_EXTENSIONS: [&'static str; 1] = [
-    "VK_KHR_swapchain"
+    "VK_KHR_swapchain",
 ];
 
 #[derive(Clone, Debug)]
@@ -46,7 +46,7 @@ impl VkPhysicalDevice {
         }
     }
 
-    fn get_physical_device_name(instance: &ash::Instance,physical_device: vk::PhysicalDevice) -> String {
+    fn get_physical_device_name(instance: &ash::Instance, physical_device: vk::PhysicalDevice) -> String {
         let device_properties = unsafe { 
             instance.get_physical_device_properties(physical_device) 
         };

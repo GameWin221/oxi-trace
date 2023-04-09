@@ -5,7 +5,7 @@ use crate::{
     vk_command_pool::VkCommandBuffer,
     vk_framebuffer::VkFramebuffer,
     vk_graphics_pipeline::VkGraphicsPipeline, 
-    vk_buffer::VkBuffer
+    vk_buffer::VkBuffer, vk_descriptor_pool::VkDescriptorSet
 };
 
 #[derive(Clone, Default)]
@@ -15,6 +15,7 @@ pub struct VkRenderPass {
     bound_extent: Option<vk::Extent2D>,
     bound_command_buffer: Option<vk::CommandBuffer>,
     bound_device: Option<ash::Device>,
+    bound_pipeline_layout: Option<vk::PipelineLayout>,
 }
 
 impl VkRenderPass {
@@ -26,38 +27,27 @@ impl VkRenderPass {
             (vec![], vec![])
         };
 
-        if let Some((attachment, _attachment_ref)) = depth_attachment {
+        if let Some((attachment, _)) = depth_attachment {
             render_pass_attachments.push(attachment);
         }
 
         let subpass = vk::SubpassDescription {
             flags: vk::SubpassDescriptionFlags::empty(),
             pipeline_bind_point: vk::PipelineBindPoint::GRAPHICS,
-            input_attachment_count: 0,
-            p_input_attachments: ptr::null(),
             color_attachment_count: render_pass_attachment_refs.len() as u32,
             p_color_attachments: render_pass_attachment_refs.as_ptr(),
-            p_resolve_attachments: ptr::null(),
             p_depth_stencil_attachment: if let Some((_attachment, attachment_ref)) = depth_attachment {
                 &attachment_ref
             } else {
                 std::ptr::null()
             },
-            preserve_attachment_count: 0,
-            p_preserve_attachments: ptr::null(),
+            ..Default::default()
         };
 
-        let renderpass_create_info = vk::RenderPassCreateInfo {
-            s_type: vk::StructureType::RENDER_PASS_CREATE_INFO,
-            flags: vk::RenderPassCreateFlags::empty(),
-            p_next: ptr::null(),
-            attachment_count: render_pass_attachments.len() as u32,
-            p_attachments: render_pass_attachments.as_ptr(),
-            subpass_count: 1,
-            p_subpasses: &subpass,
-            dependency_count: 0,
-            p_dependencies: ptr::null(),
-        };
+        let renderpass_create_info = vk::RenderPassCreateInfo::builder()
+            .attachments(render_pass_attachments.as_slice())
+            .subpasses(&[subpass])
+            .build();
 
         let render_pass = unsafe {
             device.create_render_pass(&renderpass_create_info, None).expect("Failed to create render pass!")
@@ -68,6 +58,7 @@ impl VkRenderPass {
             bound_extent: None,
             bound_command_buffer: None,
             bound_device: None,
+            bound_pipeline_layout: None
         }
     }
 
@@ -115,12 +106,15 @@ impl VkRenderPass {
             self.bound_device.as_ref().unwrap().cmd_end_render_pass(self.bound_command_buffer.unwrap());
         }
 
+        self.bound_pipeline_layout = None;
         self.bound_extent = None;
         self.bound_device = None;
         self.bound_command_buffer = None;
     }
 
-    pub fn bind_graphics_pipeline(&self, graphics_pipeline: &VkGraphicsPipeline) {
+    pub fn bind_graphics_pipeline(&mut self, graphics_pipeline: &VkGraphicsPipeline) {
+        self.bound_pipeline_layout = Some(graphics_pipeline.layout);
+        
         let scissors = [vk::Rect2D {
             offset: vk::Offset2D { x: 0, y: 0 },
             extent: vk::Extent2D { 
@@ -137,7 +131,7 @@ impl VkRenderPass {
             min_depth: 0.0,
             max_depth: 1.0,
         }];
-        
+
         unsafe {
             self.bound_device.as_ref().unwrap().cmd_bind_pipeline(
                 self.bound_command_buffer.unwrap(),
@@ -177,6 +171,19 @@ impl VkRenderPass {
                 index_buffer.handle, 
                 0, 
                 vk::IndexType::UINT32
+            );
+        }
+    }
+
+    pub fn bind_descriptor_set(&self, descriptor_set: &VkDescriptorSet) {
+        unsafe {
+            self.bound_device.as_ref().unwrap().cmd_bind_descriptor_sets(
+                self.bound_command_buffer.unwrap(),
+                vk::PipelineBindPoint::GRAPHICS,
+                self.bound_pipeline_layout.unwrap(),
+                0,
+                &[descriptor_set.handle],
+                &[]
             );
         }
     }
