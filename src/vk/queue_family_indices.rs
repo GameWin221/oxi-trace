@@ -1,7 +1,7 @@
-use ash::vk;
 
-use crate::{
-    vk_surface::*
+
+use crate::vk::{
+    surface::*
 };
 
 #[derive(Clone, Debug)]
@@ -20,7 +20,7 @@ impl VkQueueFamilyIndices {
         }
     }
 
-    pub fn find(instance: &ash::Instance, physical_device: vk::PhysicalDevice, surface: &VkSurface) -> VkQueueFamilyIndices {
+    pub fn find(instance: &ash::Instance, physical_device: ash::vk::PhysicalDevice, surface: &VkSurface) -> VkQueueFamilyIndices {
         let queue_families = unsafe { 
             instance.get_physical_device_queue_family_properties(physical_device) 
         };
@@ -29,10 +29,10 @@ impl VkQueueFamilyIndices {
 
         let mut index = 0;
         for queue_family in queue_families.iter() {
-            if queue_family.queue_count > 0 && queue_family.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
+            if queue_family.queue_count > 0 && queue_family.queue_flags.contains(ash::vk::QueueFlags::GRAPHICS) {
                 queue_family_indices.graphics = Some(index);
             }
-            else if queue_family.queue_count > 0 && queue_family.queue_flags.contains(vk::QueueFlags::TRANSFER) && !queue_family.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
+            else if queue_family.queue_count > 0 && queue_family.queue_flags.contains(ash::vk::QueueFlags::TRANSFER) && !queue_family.queue_flags.contains(ash::vk::QueueFlags::GRAPHICS) {
                 queue_family_indices.transfer = Some(index);
             }
 

@@ -1,12 +1,11 @@
-use ash::vk;
 
 pub struct VkSemaphore {
-    pub handle: vk::Semaphore
+    pub handle: ash::vk::Semaphore
 }
 
 impl VkSemaphore {
     pub fn new(device: &ash::Device) -> Self {
-        let create_info = vk::SemaphoreCreateInfo::builder().build();
+        let create_info = ash::vk::SemaphoreCreateInfo::builder().build();
 
         Self {
             handle: unsafe { device.create_semaphore(&create_info, None).expect("Failed to create Semaphore Object!") }
@@ -20,12 +19,12 @@ impl VkSemaphore {
 }
 
 pub struct VkFence {
-    pub handle: vk::Fence
+    pub handle: ash::vk::Fence
 }
 
 impl VkFence {
-    pub fn new(device: &ash::Device, create_flags: vk::FenceCreateFlags) -> Self {
-        let create_info = vk::FenceCreateInfo::builder().flags(create_flags).build();
+    pub fn new(device: &ash::Device, create_flags: ash::vk::FenceCreateFlags) -> Self {
+        let create_info = ash::vk::FenceCreateInfo::builder().flags(create_flags).build();
 
         Self {
             handle: unsafe { 

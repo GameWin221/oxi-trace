@@ -1,9 +1,9 @@
-use ash::vk;
+
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 
 #[derive(Clone)]
 pub struct VkSurface {
-    pub handle: vk::SurfaceKHR,
+    pub handle: ash::vk::SurfaceKHR,
     pub loader: ash::extensions::khr::Surface,
 }
 

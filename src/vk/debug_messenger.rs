@@ -1,4 +1,4 @@
-use ash::vk;
+
 
 use crate::utilities;
 
@@ -16,28 +16,28 @@ pub const ENABLE_VALIDATION_LAYERS: bool = false;
 pub const ENABLE_VALIDATION_LAYERS: bool = true;
 
 unsafe extern "system" fn vulkan_debug_utils_callback(
-    message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
-    message_type: vk::DebugUtilsMessageTypeFlagsEXT,
-    p_callback_data: *const vk::DebugUtilsMessengerCallbackDataEXT,
+    message_severity: ash::vk::DebugUtilsMessageSeverityFlagsEXT,
+    message_type: ash::vk::DebugUtilsMessageTypeFlagsEXT,
+    p_callback_data: *const ash::vk::DebugUtilsMessengerCallbackDataEXT,
     _p_user_data: *mut c_void,
-) -> vk::Bool32 {
+) -> ash::vk::Bool32 {
     let severity = match message_severity {
-        vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE => "[Verbose]",
-        vk::DebugUtilsMessageSeverityFlagsEXT::WARNING => "[Warning]",
-        vk::DebugUtilsMessageSeverityFlagsEXT::ERROR => "[Error]",
-        vk::DebugUtilsMessageSeverityFlagsEXT::INFO => "[Info]",
+        ash::vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE => "[Verbose]",
+        ash::vk::DebugUtilsMessageSeverityFlagsEXT::WARNING => "[Warning]",
+        ash::vk::DebugUtilsMessageSeverityFlagsEXT::ERROR => "[Error]",
+        ash::vk::DebugUtilsMessageSeverityFlagsEXT::INFO => "[Info]",
         _ => "[Unknown]",
     };
     let types = match message_type {
-        vk::DebugUtilsMessageTypeFlagsEXT::GENERAL => "[General]",
-        vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE => "[Performance]",
-        vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION => "[Validation]",
+        ash::vk::DebugUtilsMessageTypeFlagsEXT::GENERAL => "[General]",
+        ash::vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE => "[Performance]",
+        ash::vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION => "[Validation]",
         _ => "[Unknown]",
     };
     let message = CStr::from_ptr((*p_callback_data).p_message);
     println!("[Debug]{}{}{:?}", severity, types, message);
 
-    vk::FALSE
+    ash::vk::FALSE
 }
 
 pub fn check_validation_layer_support(entry: &ash::Entry) -> bool {
@@ -67,18 +67,18 @@ pub fn check_validation_layer_support(entry: &ash::Entry) -> bool {
     true
 }
 
-pub fn populate_debug_messenger_create_info() -> vk::DebugUtilsMessengerCreateInfoEXT {
-    vk::DebugUtilsMessengerCreateInfoEXT {
-        s_type: vk::StructureType::DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+pub fn populate_debug_messenger_create_info() -> ash::vk::DebugUtilsMessengerCreateInfoEXT {
+    ash::vk::DebugUtilsMessengerCreateInfoEXT {
+        s_type: ash::vk::StructureType::DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
         p_next: ptr::null(),
-        flags: vk::DebugUtilsMessengerCreateFlagsEXT::empty(),
-        message_severity: vk::DebugUtilsMessageSeverityFlagsEXT::WARNING |
-            // vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE |
-            // vk::DebugUtilsMessageSeverityFlagsEXT::INFO |
-            vk::DebugUtilsMessageSeverityFlagsEXT::ERROR,
-        message_type: vk::DebugUtilsMessageTypeFlagsEXT::GENERAL
-            | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE
-            | vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION,
+        flags: ash::vk::DebugUtilsMessengerCreateFlagsEXT::empty(),
+        message_severity: ash::vk::DebugUtilsMessageSeverityFlagsEXT::WARNING |
+            // ash::vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE |
+            // ash::vk::DebugUtilsMessageSeverityFlagsEXT::INFO |
+            ash::vk::DebugUtilsMessageSeverityFlagsEXT::ERROR,
+        message_type: ash::vk::DebugUtilsMessageTypeFlagsEXT::GENERAL
+            | ash::vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE
+            | ash::vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION,
         pfn_user_callback: Some(vulkan_debug_utils_callback),
         p_user_data: ptr::null_mut(),
     }
@@ -87,7 +87,7 @@ pub fn populate_debug_messenger_create_info() -> vk::DebugUtilsMessengerCreateIn
 #[derive(Clone)]
 pub struct VkDebugMessenger {
     debug_utils: ash::extensions::ext::DebugUtils,
-    messenger: vk::DebugUtilsMessengerEXT
+    messenger: ash::vk::DebugUtilsMessengerEXT
 }
 
 impl VkDebugMessenger {

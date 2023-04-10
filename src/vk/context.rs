@@ -1,26 +1,26 @@
 use raw_window_handle::HasRawDisplayHandle;
 
-use crate::{
-    vk_debug_messenger::*,
-    vk_queue_family_indices::*,
-    vk_physical_device::*, 
-    vk_surface::*,
-    vk_queue::*,
-    vk_command_pool::*,
-    vk_descriptor_pool::*,
+use crate::vk::{
+    debug_messenger::*,
+    queue_family_indices::*,
+    physical_device::*, 
+    surface::*,
+    queue::*,
+    command_pool::*,
+    descriptor_pool::*,
 };
 
 use gpu_allocator::vulkan::*;
 
-use ash::vk;
+
 use std::collections::HashSet;
 use std::ffi::CString;
 use std::os::raw::{c_void, c_char};
 use std::ptr;
 
-pub const APPLICATION_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
-pub const ENGINE_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
-pub const API_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
+pub const APPLICATION_VERSION: u32 = ash::vk::make_api_version(0, 1, 0, 0);
+pub const ENGINE_VERSION: u32 = ash::vk::make_api_version(0, 1, 0, 0);
+pub const API_VERSION: u32 = ash::vk::make_api_version(0, 1, 0, 0);
 
 pub const WINDOW_TITLE: &'static str = "OxiTrace";
 
@@ -101,17 +101,17 @@ impl VkContext {
 
         let app_name = CString::new(WINDOW_TITLE).unwrap();
         let engine_name = CString::new("Vulkan Engine").unwrap();
-        let app_info = vk::ApplicationInfo {
+        let app_info = ash::vk::ApplicationInfo {
             p_application_name: app_name.as_ptr(),
-            s_type: vk::StructureType::APPLICATION_INFO,
+            s_type: ash::vk::StructureType::APPLICATION_INFO,
             p_next: ptr::null(),
             application_version: APPLICATION_VERSION,
             p_engine_name: engine_name.as_ptr(),
             engine_version: ENGINE_VERSION,
-            api_version: API_VERSION, // set api_version to vk_make_version!(2, 0, 92) to test if the p_next field in vk::InstanceCreateInfo works.
+            api_version: API_VERSION, // set api_version to make_version!(2, 0, 92) to test if the p_next field in ash::vk::InstanceCreateInfo works.
         };
 
-        // This create info used to debug issues in vk::createInstance and vk::destroyInstance.
+        // This create info used to debug issues in ash::vk::createInstance and ash::vk::destroyInstance.
         let debug_utils_create_info = populate_debug_messenger_create_info();
 
         // VK_EXT debug utils has been requested here.
@@ -130,14 +130,14 @@ impl VkContext {
             |layer_name| layer_name.as_ptr()
         ).collect();
 
-        let create_info = vk::InstanceCreateInfo {
-            s_type: vk::StructureType::INSTANCE_CREATE_INFO,
+        let create_info = ash::vk::InstanceCreateInfo {
+            s_type: ash::vk::StructureType::INSTANCE_CREATE_INFO,
             p_next: if ENABLE_VALIDATION_LAYERS {
-                &debug_utils_create_info as *const vk::DebugUtilsMessengerCreateInfoEXT as *const c_void
+                &debug_utils_create_info as *const ash::vk::DebugUtilsMessengerCreateInfoEXT as *const c_void
             } else {
                 ptr::null()
             },
-            flags: vk::InstanceCreateFlags::empty(),
+            flags: ash::vk::InstanceCreateFlags::empty(),
             p_application_info: &app_info,
             pp_enabled_layer_names: if ENABLE_VALIDATION_LAYERS {
                 enabled_layer_names.as_ptr()
@@ -175,22 +175,22 @@ impl VkContext {
         let queue_priorities = [1.0_f32];
         let mut queue_create_infos = vec![];
         for &queue_family in unique_queue_families.iter() {
-            queue_create_infos.push(vk::DeviceQueueCreateInfo {
-                s_type: vk::StructureType::DEVICE_QUEUE_CREATE_INFO,
+            queue_create_infos.push(ash::vk::DeviceQueueCreateInfo {
+                s_type: ash::vk::StructureType::DEVICE_QUEUE_CREATE_INFO,
                 p_next: ptr::null(),
-                flags: vk::DeviceQueueCreateFlags::empty(),
+                flags: ash::vk::DeviceQueueCreateFlags::empty(),
                 queue_family_index: queue_family,
                 p_queue_priorities: queue_priorities.as_ptr(),
                 queue_count: queue_priorities.len() as u32,
             });
         }
 
-        let physical_device_features = vk::PhysicalDeviceFeatures {
+        let physical_device_features = ash::vk::PhysicalDeviceFeatures {
             sampler_anisotropy: 1,
             ..Default::default()
         };
-        let physical_device_buffer_features = vk::PhysicalDeviceBufferDeviceAddressFeatures {
-            s_type: vk::StructureType::PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES,
+        let physical_device_buffer_features = ash::vk::PhysicalDeviceBufferDeviceAddressFeatures {
+            s_type: ash::vk::StructureType::PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES,
             p_next: std::ptr::null_mut(),
             buffer_device_address: 1,
             buffer_device_address_capture_replay: 0,
@@ -214,10 +214,10 @@ impl VkContext {
             |extension_name| extension_name.as_ptr()
         ).collect();
 
-        let device_create_info = vk::DeviceCreateInfo {
-            s_type: vk::StructureType::DEVICE_CREATE_INFO,
-            p_next: &physical_device_buffer_features as *const vk::PhysicalDeviceBufferDeviceAddressFeatures as *const c_void,
-            flags: vk::DeviceCreateFlags::empty(),
+        let device_create_info = ash::vk::DeviceCreateInfo {
+            s_type: ash::vk::StructureType::DEVICE_CREATE_INFO,
+            p_next: &physical_device_buffer_features as *const ash::vk::PhysicalDeviceBufferDeviceAddressFeatures as *const c_void,
+            flags: ash::vk::DeviceCreateFlags::empty(),
             queue_create_info_count: queue_create_infos.len() as u32,
             p_queue_create_infos: queue_create_infos.as_ptr(),
             enabled_layer_count: if ENABLE_VALIDATION_LAYERS {

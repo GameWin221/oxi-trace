@@ -1,11 +1,13 @@
 use std::collections::HashSet;
-use ash::vk;
+
 
 use crate::{
     utilities,
-    vk_swapchain::*,
-    vk_queue_family_indices::*,
-    vk_surface::*
+    vk::{
+        swapchain::*,
+        queue_family_indices::*,
+        surface::*
+    }
 };
 
 pub const DEVICE_EXTENSIONS: [&'static str; 1] = [
@@ -14,7 +16,7 @@ pub const DEVICE_EXTENSIONS: [&'static str; 1] = [
 
 #[derive(Clone, Debug)]
 pub struct VkPhysicalDevice {
-    pub handle: vk::PhysicalDevice,
+    pub handle: ash::vk::PhysicalDevice,
     pub name: String,
     pub queue_family_indices: VkQueueFamilyIndices
 }
@@ -38,7 +40,7 @@ impl VkPhysicalDevice {
         result 
     }
 
-    pub fn from_native(instance: &ash::Instance, native_physical_device: vk::PhysicalDevice, surface: &VkSurface) -> Self {
+    pub fn from_native(instance: &ash::Instance, native_physical_device: ash::vk::PhysicalDevice, surface: &VkSurface) -> Self {
         VkPhysicalDevice { 
             handle: native_physical_device, 
             name: Self::get_physical_device_name(instance, native_physical_device),
@@ -46,7 +48,7 @@ impl VkPhysicalDevice {
         }
     }
 
-    fn get_physical_device_name(instance: &ash::Instance, physical_device: vk::PhysicalDevice) -> String {
+    fn get_physical_device_name(instance: &ash::Instance, physical_device: ash::vk::PhysicalDevice) -> String {
         let device_properties = unsafe { 
             instance.get_physical_device_properties(physical_device) 
         };
@@ -79,7 +81,7 @@ impl VkPhysicalDevice {
 
         let is_device_extension_supported = Self::query_device_extensions_support(&available_extensions);
         let is_swapchain_supported = if is_device_extension_supported {
-            let swapchain_support = query_swapchain_support(physical_device, surface);
+            let swapchain_support = VkSwapchain::query_swapchain_support(physical_device, surface);
 
             !swapchain_support.formats.is_empty() && !swapchain_support.present_modes.is_empty()
         } else {
@@ -89,7 +91,7 @@ impl VkPhysicalDevice {
         return indices.is_complete() && is_device_extension_supported && is_swapchain_supported;
     }
 
-    fn query_device_extensions_support(available_extensions: &Vec<vk::ExtensionProperties>) -> bool {
+    fn query_device_extensions_support(available_extensions: &Vec<ash::vk::ExtensionProperties>) -> bool {
         let available_extension_names: Vec<String> = available_extensions.iter().map(
             |extension| utilities::cchar_to_string(&extension.extension_name)
         ).collect();
@@ -107,26 +109,26 @@ impl VkPhysicalDevice {
 
     #[cfg(debug_assertions)]
     fn print_device_info(
-        device_properties: &vk::PhysicalDeviceProperties,
-        device_features: &vk::PhysicalDeviceFeatures,
-        device_queue_families: &Vec<vk::QueueFamilyProperties>,
-        available_extensions: &Vec<vk::ExtensionProperties>,
+        device_properties: &ash::vk::PhysicalDeviceProperties,
+        device_features: &ash::vk::PhysicalDeviceFeatures,
+        device_queue_families: &Vec<ash::vk::QueueFamilyProperties>,
+        available_extensions: &Vec<ash::vk::ExtensionProperties>,
     ) {
         let device_type = match device_properties.device_type {
-            vk::PhysicalDeviceType::CPU => "Cpu",
-            vk::PhysicalDeviceType::INTEGRATED_GPU => "Integrated GPU",
-            vk::PhysicalDeviceType::DISCRETE_GPU => "Discrete GPU",
-            vk::PhysicalDeviceType::VIRTUAL_GPU => "Virtual GPU",
-            vk::PhysicalDeviceType::OTHER => "Unknown",
+            ash::vk::PhysicalDeviceType::CPU => "Cpu",
+            ash::vk::PhysicalDeviceType::INTEGRATED_GPU => "Integrated GPU",
+            ash::vk::PhysicalDeviceType::DISCRETE_GPU => "Discrete GPU",
+            ash::vk::PhysicalDeviceType::VIRTUAL_GPU => "Virtual GPU",
+            ash::vk::PhysicalDeviceType::OTHER => "Unknown",
             _ => panic!(),
         };
     
         let device_name = utilities::cchar_to_string(&device_properties.device_name);
         println!("\tDevice Name: {}, id: {}, type: {}", device_name, device_properties.device_id, device_type);
     
-        let major_version = vk::api_version_major(device_properties.api_version);
-        let minor_version = vk::api_version_minor(device_properties.api_version);
-        let patch_version = vk::api_version_patch(device_properties.api_version);
+        let major_version = ash::vk::api_version_major(device_properties.api_version);
+        let minor_version = ash::vk::api_version_minor(device_properties.api_version);
+        let patch_version = ash::vk::api_version_patch(device_properties.api_version);
     
         println!("\tAPI Version: {}.{}.{}",major_version, minor_version, patch_version);
     
@@ -134,22 +136,22 @@ impl VkPhysicalDevice {
         println!("\t\tQueue Count |  Graphics,    Compute,   Transfer,   Sparse Binding");
         
         for queue_family in device_queue_families.iter() {
-            let is_graphics_support = if queue_family.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
+            let is_graphics_support = if queue_family.queue_flags.contains(ash::vk::QueueFlags::GRAPHICS) {
                 " support "
             } else {
                 "unsupport"
             };
-            let is_compute_support = if queue_family.queue_flags.contains(vk::QueueFlags::COMPUTE) {
+            let is_compute_support = if queue_family.queue_flags.contains(ash::vk::QueueFlags::COMPUTE) {
                 " support "
             } else {
                 "unsupport"
             };
-            let is_transfer_support = if queue_family.queue_flags.contains(vk::QueueFlags::TRANSFER) {
+            let is_transfer_support = if queue_family.queue_flags.contains(ash::vk::QueueFlags::TRANSFER) {
                 " support "
             } else {
                 "unsupport"
             };
-            let is_sparse_support = if queue_family.queue_flags.contains(vk::QueueFlags::SPARSE_BINDING) {
+            let is_sparse_support = if queue_family.queue_flags.contains(ash::vk::QueueFlags::SPARSE_BINDING) {
                 " support "
             } else {
                 "unsupport"
@@ -179,10 +181,10 @@ impl VkPhysicalDevice {
 
     #[cfg(not(debug_assertions))]
     fn print_device_info(
-        device_properties: &vk::PhysicalDeviceProperties,
-        device_features: &vk::PhysicalDeviceFeatures,
-        device_queue_families: &Vec<vk::QueueFamilyProperties>,
-        available_extensions: &Vec<vk::ExtensionProperties>,
+        device_properties: &ash::vk::PhysicalDeviceProperties,
+        device_features: &ash::vk::PhysicalDeviceFeatures,
+        device_queue_families: &Vec<ash::vk::QueueFamilyProperties>,
+        available_extensions: &Vec<ash::vk::ExtensionProperties>,
     ) {
         
     }

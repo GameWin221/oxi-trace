@@ -1,18 +1,18 @@
-use ash::vk;
 
-use crate::vk_renderpass::*;
+
+use crate::vk::renderpass::*;
 
 pub struct VkFramebuffer {
-    pub handle: vk::Framebuffer,
-    pub extent: vk::Extent2D
+    pub handle: ash::vk::Framebuffer,
+    pub extent: ash::vk::Extent2D
 }
 
 impl VkFramebuffer {
-    pub fn new(device: &ash::Device, extent: vk::Extent2D, views: &Vec<vk::ImageView>, render_pass: &VkRenderPass) -> Self {
-        let create_info = vk::FramebufferCreateInfo {
-            s_type: vk::StructureType::FRAMEBUFFER_CREATE_INFO,
+    pub fn new(device: &ash::Device, extent: ash::vk::Extent2D, views: &Vec<ash::vk::ImageView>, render_pass: &VkRenderPass) -> Self {
+        let create_info = ash::vk::FramebufferCreateInfo {
+            s_type: ash::vk::StructureType::FRAMEBUFFER_CREATE_INFO,
             p_next: std::ptr::null(),
-            flags: vk::FramebufferCreateFlags::empty(),
+            flags: ash::vk::FramebufferCreateFlags::empty(),
             render_pass: render_pass.handle,
             attachment_count: views.len() as u32,
             p_attachments: views.as_ptr(),

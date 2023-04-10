@@ -1,0 +1,15 @@
+#version 450
+
+layout (binding = 0, rgba8) uniform image2D RenderTarget;
+
+layout (local_size_x = 4, local_size_y = 8, local_size_z =  1) in;
+
+void main()
+{
+    ivec2 xy = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(RenderTarget);
+    vec2 uv = vec2(float(xy.x) / size.x, float(xy.y) / size.y);
+    
+
+    imageStore(RenderTarget, xy, vec4(uv, 0.0, 1.0));
+}
