@@ -1,5 +1,3 @@
-
-
 use gpu_allocator::vulkan::*;
 use gpu_allocator::MemoryLocation;
 
@@ -20,7 +18,7 @@ pub struct VkTexture {
     pub view: ash::vk::ImageView,
     pub sampler: Option<ash::vk::Sampler>,
     pub extent: ash::vk::Extent2D,
-    pub allocation: Allocation,
+    pub allocation: Option<Allocation>,
 
     pub aspect: ash::vk::ImageAspectFlags,
     pub layout: ash::vk::ImageLayout,
@@ -98,7 +96,7 @@ impl VkTexture {
             handle: image,
             view: image_view,
             sampler: None,
-            allocation,
+            allocation: Some(allocation),
             extent,
 
             aspect,
@@ -161,7 +159,7 @@ impl VkTexture {
 
     }
 
-    pub fn destroy(&self, device: &ash::Device) {
+    pub fn destroy(&mut self, device: &ash::Device, allocator: &mut Allocator) {
         unsafe {
             if let Some(sampler) = self.sampler {
                 device.destroy_sampler(sampler, None);
@@ -169,6 +167,10 @@ impl VkTexture {
 
             device.destroy_image_view(self.view, None);
             device.destroy_image(self.handle, None);
+
+            let mut alloc: Option<Allocation> = None;
+            std::mem::swap(&mut alloc, &mut self.allocation);
+            allocator.free(alloc.unwrap()).expect("Failed to free allocated texture memory!");
         }
     }
 

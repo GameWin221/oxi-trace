@@ -32,7 +32,7 @@ impl VkQueueFamilyIndices {
             if queue_family.queue_count > 0 && queue_family.queue_flags.contains(ash::vk::QueueFlags::GRAPHICS) {
                 queue_family_indices.graphics = Some(index);
             }
-            else if queue_family.queue_count > 0 && queue_family.queue_flags.contains(ash::vk::QueueFlags::TRANSFER) && !queue_family.queue_flags.contains(ash::vk::QueueFlags::GRAPHICS) {
+            if queue_family.queue_count > 0 && queue_family.queue_flags.contains(ash::vk::QueueFlags::TRANSFER) && !queue_family.queue_flags.contains(ash::vk::QueueFlags::GRAPHICS) {
                 queue_family_indices.transfer = Some(index);
             }
 

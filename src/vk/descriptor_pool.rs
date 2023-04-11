@@ -1,31 +1,64 @@
-
-
 const DESCRIPTOR_POOL_SIZES_COUNT: u32 = 64; 
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct VkDescriptorPool {
+    pub handle: ash::vk::DescriptorPool,
+}
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct VkDescriptorSet {
     pub handle: ash::vk::DescriptorSet,
     pub layout: ash::vk::DescriptorSetLayout
 }
+#[derive(Clone, Copy, Debug, Default)]
+pub struct VkDescriptorSetSlot {
+    pub binding: ash::vk::DescriptorSetLayoutBinding,
+    pub buffer_info: Option<ash::vk::DescriptorBufferInfo>,
+    pub image_info: Option<ash::vk::DescriptorImageInfo>,
+}
 
 impl VkDescriptorSet {
     pub fn update(&self, device: &ash::Device, slots: &Vec<VkDescriptorSetSlot>) {
         let mut descriptor_write_sets = vec![];
+        let mut image_infos = vec![];
+        let mut buffer_infos = vec![];
+
+        // The descriptor infos must be alive until 'device.update_descriptor_sets(...)'
         for slot in slots {
-            let info = if let Some(image_info) = slot.image_info {
-                ash::vk::WriteDescriptorSet::builder()
-                    .dst_set(self.handle)
-                    .descriptor_type(slot.binding.descriptor_type)
-                    .dst_binding(slot.binding.binding)
-                    .image_info(&[image_info])
-                    .build()
+            if let Some(image_info) = slot.image_info {
+                image_infos.push(image_info);
             } else if let Some(buffer_info) = slot.buffer_info {
-                ash::vk::WriteDescriptorSet::builder()
-                    .dst_set(self.handle)
-                    .descriptor_type(slot.binding.descriptor_type)
-                    .dst_binding(slot.binding.binding)
-                    .buffer_info(&[buffer_info])
-                    .build()
+                buffer_infos.push(buffer_info);
+            } else {
+                panic!("image_info and buffer_info are both None!")
+            };
+        }
+
+        let mut bi = 0;
+        let mut ii = 0;
+        for slot in slots {
+        let info = if let Some(_) = slot.image_info {
+                ii += 1;
+
+                ash::vk::WriteDescriptorSet {
+                    dst_set: self.handle,
+                    dst_binding: slot.binding.binding,
+                    descriptor_count: 1,
+                    descriptor_type: slot.binding.descriptor_type,
+                    p_image_info: &image_infos[ii-1] as *const ash::vk::DescriptorImageInfo,
+                    ..Default::default()
+                }
+            } else if let Some(_) = slot.buffer_info {
+                bi += 1;
+
+                ash::vk::WriteDescriptorSet{
+                    dst_set: self.handle,
+                    dst_binding: slot.binding.binding,
+                    descriptor_count: 1,
+                    descriptor_type: slot.binding.descriptor_type,
+                    p_buffer_info: &buffer_infos[bi-1] as *const ash::vk::DescriptorBufferInfo,
+                    ..Default::default()
+                }
             } else {
                 panic!("image_info and buffer_info are both None!")
             };
@@ -36,18 +69,8 @@ impl VkDescriptorSet {
         unsafe {
             device.update_descriptor_sets(&descriptor_write_sets, &[]);
         }
+
     }
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct VkDescriptorPool {
-    pub handle: ash::vk::DescriptorPool,
-}
-
-pub struct VkDescriptorSetSlot {
-    pub binding: ash::vk::DescriptorSetLayoutBinding,
-    pub buffer_info: Option<ash::vk::DescriptorBufferInfo>,
-    pub image_info: Option<ash::vk::DescriptorImageInfo>,
 }
 
 impl VkDescriptorPool {

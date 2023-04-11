@@ -5,35 +5,42 @@ use winit::event_loop::{EventLoop, ControlFlow};
 
 mod vk;
 mod utilities;
+mod camera;
 
-use vk::context::*;
-use vk::compute_pipeline::*;
-use vk::command_buffer::*;
-use vk::sync_objects::*;
-use vk::buffer::*;
-use vk::descriptor_pool::*;
-use vk::swapchain::*;
-use vk::texture::*;
+use camera::*;
 
-use cgmath::{Deg, Matrix4, Point3, SquareMatrix, Vector3};
+use vk::{
+    context::*,
+    compute_pipeline::*,
+    command_buffer::*,
+    sync_objects::*,
+    buffer::*,
+    descriptor_pool::*,
+    swapchain::*,
+    texture::*,
+};
 
 pub const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
 #[repr(C)]
+#[derive(Clone, Debug, Copy, Default)]
+struct SphereRaw {
+    position: [f32; 3],
+    radius: f32
+}
+
+#[repr(C)]
 #[derive(Clone, Debug, Copy)]
-struct UniformBufferObject {
-    model: Matrix4<f32>,
-    view: Matrix4<f32>,
-    proj: Matrix4<f32>,
+struct SceneBufferObject {
+    spheres: [SphereRaw; 64],
+    sphere_count: u32
 }
 
 pub struct OxiTrace {
     context: VkContext,
-
     swapchain: VkSwapchain,
 
     compute_pipeline: VkComputePipeline,
-
     command_buffers: Vec<VkCommandBuffer>,
 
     image_available_semaphores: Vec<VkSemaphore>,
@@ -41,11 +48,13 @@ pub struct OxiTrace {
     in_flight_fences: Vec<VkFence>,
 
     frame_index: usize,
-    framebuffer_resized: bool,
 
-    uniform_buffers: Vec<VkBuffer>,
+    camera: Camera,
+
     descriptor_sets: Vec<VkDescriptorSet>,
-    model_transform: UniformBufferObject,
+    scene_buffer: VkBuffer,
+
+    camera_buffers: Vec<VkBuffer>,
 
     render_target: VkTexture,
 }
@@ -65,6 +74,19 @@ impl OxiTrace {
             }
         );
 
+        let mut render_target = VkTexture::new(
+            &context.device,
+            &mut context.allocator.as_mut().unwrap(), 
+            ash::vk::Format::B8G8R8A8_UNORM,
+            ash::vk::Extent2D { 
+                width: swapchain.extent.width,
+                height: swapchain.extent.height
+            },
+            ash::vk::ImageTiling::LINEAR,
+            ash::vk::ImageUsageFlags::STORAGE | ash::vk::ImageUsageFlags::TRANSFER_SRC,
+            ash::vk::ImageAspectFlags::COLOR
+        );
+
         let cmd = utilities::begin_single_queue_submit(&context.device, &context.graphics_command_pool);
         for image in swapchain.images.iter() {
             cmd.transition_image_layout(
@@ -75,22 +97,7 @@ impl OxiTrace {
                 ash::vk::ImageLayout::PRESENT_SRC_KHR
             );
         }
-        utilities::end_single_queue_submit(&context.device, &context.graphics_command_pool, &context.graphics_queue, cmd);
-
-        let mut render_target = VkTexture::new(
-            &context.device,
-            &mut context.allocator.as_mut().unwrap(), 
-            ash::vk::Format::B8G8R8A8_UNORM,
-            ash::vk::Extent2D { 
-                width: window.inner_size().width,
-                height: window.inner_size().height
-            },
-            ash::vk::ImageTiling::LINEAR,
-            ash::vk::ImageUsageFlags::STORAGE | ash::vk::ImageUsageFlags::TRANSFER_SRC,
-            ash::vk::ImageAspectFlags::COLOR
-        );
-
-        let cmd = utilities::begin_single_queue_submit(&context.device, &context.graphics_command_pool);
+        
         render_target.transition_layout(
             &context.device,
             ash::vk::ImageLayout::GENERAL,
@@ -98,17 +105,23 @@ impl OxiTrace {
         );
         utilities::end_single_queue_submit(&context.device, &context.graphics_command_pool, &context.graphics_queue, cmd);
 
-        let uniform_buffers: Vec<VkBuffer> = (0..swapchain.image_views.len()).into_iter().map(|_| {
-            VkBuffer::new(
-                &context.device,
-                &mut context.allocator.as_mut().unwrap(),
-                std::mem::size_of::<UniformBufferObject>() as u64,
-                ash::vk::BufferUsageFlags::UNIFORM_BUFFER,
-                MemoryLocation::CpuToGpu
-            )
-        }).collect();
+        let scene_buffer = VkBuffer::new(
+            &context.device,
+            &mut context.allocator.as_mut().unwrap(),
+            std::mem::size_of::<SceneBufferObject>() as u64,
+            ash::vk::BufferUsageFlags::UNIFORM_BUFFER | ash::vk::BufferUsageFlags::TRANSFER_DST,
+            MemoryLocation::GpuOnly
+        );
 
-        let descriptor_sets: Vec<VkDescriptorSet> = (0..swapchain.image_views.len()).into_iter().map(|_|{
+        let camera_buffers: Vec<VkBuffer> = (0..swapchain.image_views.len()).into_iter().map(|_|{VkBuffer::new(
+            &context.device,
+            &mut context.allocator.as_mut().unwrap(),
+            std::mem::size_of::<SceneBufferObject>() as u64,
+            ash::vk::BufferUsageFlags::UNIFORM_BUFFER,
+            MemoryLocation::CpuToGpu
+        )}).collect();
+
+        let descriptor_sets: Vec<VkDescriptorSet> = (0..swapchain.image_views.len()).into_iter().map(|i|{
             context.descriptor_pool.allocate(&context.device, &vec![
                 VkDescriptorSetSlot{
                     binding: ash::vk::DescriptorSetLayoutBinding {
@@ -124,7 +137,37 @@ impl OxiTrace {
                         image_view: render_target.view,
                         image_layout: render_target.layout,
                     }),
-                }
+                },
+                VkDescriptorSetSlot{
+                    binding: ash::vk::DescriptorSetLayoutBinding {
+                        binding: 1,
+                        descriptor_type: ash::vk::DescriptorType::UNIFORM_BUFFER,
+                        descriptor_count: 1,
+                        stage_flags: ash::vk::ShaderStageFlags::COMPUTE,
+                        p_immutable_samplers: std::ptr::null(),
+                    },
+                    buffer_info: Some(ash::vk::DescriptorBufferInfo {
+                        buffer: scene_buffer.handle,
+                        offset: 0,
+                        range: scene_buffer.size,
+                    }),
+                    image_info: None,
+                },
+                VkDescriptorSetSlot{
+                    binding: ash::vk::DescriptorSetLayoutBinding {
+                        binding: 2,
+                        descriptor_type: ash::vk::DescriptorType::UNIFORM_BUFFER,
+                        descriptor_count: 1,
+                        stage_flags: ash::vk::ShaderStageFlags::COMPUTE,
+                        p_immutable_samplers: std::ptr::null(),
+                    },
+                    buffer_info: Some(ash::vk::DescriptorBufferInfo {
+                        buffer: camera_buffers[i].handle,
+                        offset: 0,
+                        range: camera_buffers[i].size,
+                    }),
+                    image_info: None,
+                },
             ])
         }).collect();
 
@@ -142,21 +185,47 @@ impl OxiTrace {
 
         let in_flight_fences = (0..MAX_FRAMES_IN_FLIGHT).map(|_| VkFence::new(&context.device, ash::vk::FenceCreateFlags::SIGNALED)).collect();
 
-        let model_transform = UniformBufferObject {
-            model: Matrix4::<f32>::identity(),
-            view: Matrix4::look_at_rh(
-                Point3::new(0.0, 2.0, 2.0),
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 1.0, 0.0),
-            ),
-            proj: cgmath::perspective(
-                Deg(45.0),
-                swapchain.extent.width as f32
-                    / swapchain.extent.height as f32,
-                0.1,
-                10.0,
-            ),
+        let camera = Camera::new(
+            cgmath::vec3(0.0, 0.0, 0.0),
+            cgmath::vec3(0.0, 0.0, 0.0),
+            cgmath::vec2(swapchain.extent.width as f32, swapchain.extent.height as f32),
+            80.0
+        );
+
+        let mut spheres = [SphereRaw::default(); 64];
+        spheres[0] = SphereRaw {
+            position: [0.0, 0.0, 0.0],
+            radius: 0.5
         };
+        spheres[1] = SphereRaw {
+            position: [0.0, -100.5, 0.0],
+            radius: 100.0
+        };
+        spheres[2] = SphereRaw {
+            position: [1.5, 0.0, 0.0],
+            radius: 0.5
+        };
+
+        let scene_buffer_object = SceneBufferObject {
+            spheres,
+            sphere_count: 3
+        };
+
+        let mut staging_scene_buffer = VkBuffer::new(
+            &context.device,
+            &mut context.allocator.as_mut().unwrap(),
+            std::mem::size_of::<SceneBufferObject>() as u64,
+            ash::vk::BufferUsageFlags::TRANSFER_SRC,
+            MemoryLocation::CpuToGpu
+        );
+
+        staging_scene_buffer.fill(&[scene_buffer_object]);
+
+        let cmd = utilities::begin_single_queue_submit(&context.device, &context.transfer_command_pool);
+        staging_scene_buffer.copy_to_buffer(&cmd, &scene_buffer, &context.device);
+        utilities::end_single_queue_submit(&context.device, &context.transfer_command_pool, &context.transfer_queue, cmd);
+
+        staging_scene_buffer.destroy(&context.device, context.allocator.as_mut().unwrap());
 
         let mut oxitrace = Self {
             context,
@@ -172,11 +241,11 @@ impl OxiTrace {
             in_flight_fences,
 
             frame_index: 0,
-            framebuffer_resized: false,
+            camera,
 
-            uniform_buffers,
+            scene_buffer,
+            camera_buffers,
             descriptor_sets,
-            model_transform,
 
             render_target
         };
@@ -230,22 +299,16 @@ impl OxiTrace {
                 ash::vk::ImageLayout::PRESENT_SRC_KHR,
             );
 
-            //self.render_pass.begin(&self.context.device, &command_buffer, &self.framebuffers[i]);
-
-            //self.render_pass.bind_graphics_pipeline(&self.graphics_pipeline);
-            //self.render_pass.bind_vertex_buffers(&vec![&self.vertex_buffer]);
-            //self.render_pass.bind_index_buffer(&self.index_buffer);
-            //self.render_pass.bind_descriptor_set(&self.descriptor_sets[i]);
-            //self.render_pass.draw_indexed(INDICES_DATA.len() as u32, 1, 0, 0, 0);
-
-            //self.render_pass.end();
-
             command_buffer.end_recording(&self.context.device);
         }
     }
 
-    fn update(&mut self) {
-        
+    fn update(&mut self, time: f32) {
+        let distance = 2.0;
+        let x = time.sin() * distance;
+        let y = time.sin() * 0.5 + 0.5;
+        let z = time.cos() * distance;
+        self.camera.position = cgmath::vec3(x, y, z);
     }
 
     fn render(&mut self, desired_extent: ash::vk::Extent2D) {    
@@ -254,7 +317,7 @@ impl OxiTrace {
         let result = self.swapchain.acquire_next_image(&self.image_available_semaphores[self.frame_index]);
 
         let (image_index, _is_sub_optimal) = match result {
-            Ok(image_index) => image_index,
+            Ok(swapchain_info) => swapchain_info,
             Err(result) => match result {
                 ash::vk::Result::ERROR_OUT_OF_DATE_KHR => {
                     self.recreate_swapchain(desired_extent);
@@ -263,10 +326,10 @@ impl OxiTrace {
                 _ => panic!("Failed to acquire Swap Chain Image!"),
             },
         };
-
-        self.update_uniform_buffer(image_index);
-
+        
         self.in_flight_fences[self.frame_index].reset(&self.context.device);
+
+        self.camera_buffers[image_index as usize].fill(&[self.camera.to_raw()]);
 
         self.context.graphics_queue.submit(
             &self.context.device,
@@ -284,22 +347,17 @@ impl OxiTrace {
         );
 
         let is_resized = match result {
-            Ok(_) => self.framebuffer_resized,
+            Ok(_) => self.swapchain.extent != desired_extent,
             Err(result) => match result {
                 ash::vk::Result::ERROR_OUT_OF_DATE_KHR | ash::vk::Result::SUBOPTIMAL_KHR => true,
                 _ => panic!("Failed to execute queue present."),
             },
         };
         if is_resized {
-            self.framebuffer_resized = false;
             self.recreate_swapchain(desired_extent);
         }
 
         self.frame_index = (self.frame_index + 1) % MAX_FRAMES_IN_FLIGHT;
-    }
-
-    fn update_uniform_buffer(&mut self, current_index: u32) {
-        self.uniform_buffers[current_index as usize].fill(&[self.model_transform]);
     }
 
     fn recreate_swapchain(&mut self, desired_extent: ash::vk::Extent2D) {
@@ -311,6 +369,8 @@ impl OxiTrace {
             self.context.device.device_wait_idle().expect("Failed to wait device idle!")
         };
 
+        self.camera.size = cgmath::vec2(desired_extent.width as f32, desired_extent.height as f32);
+
         self.swapchain.destroy(&self.context.device);
 
         self.swapchain = VkSwapchain::new(
@@ -320,8 +380,8 @@ impl OxiTrace {
             &self.context.surface,
             desired_extent
         );
-
-        self.render_target.destroy(&self.context.device);
+        
+        self.render_target.destroy(&self.context.device, self.context.allocator.as_mut().unwrap());
         self.render_target = VkTexture::new(
             &self.context.device,
             &mut self.context.allocator.as_mut().unwrap(), 
@@ -368,47 +428,51 @@ impl OxiTrace {
                         image_view: self.render_target.view,
                         image_layout: self.render_target.layout,
                     }),
-                }
+                },
             ]);
         }
+
+        println!("Resizing to {:?}", self.swapchain.extent);
 
         Self::record_command_buffer(self);
     }
 
     pub fn run(mut self, window: winit::window::Window, event_loop: EventLoop<()>) {
+        let start = std::time::Instant::now();
+        
         event_loop.run(move |event, _, control_flow| {
             match event {
-                | Event::WindowEvent { event, .. } => {
+                Event::WindowEvent { event, .. } => {
                     match event {
-                        | WindowEvent::CloseRequested => {
+                        WindowEvent::CloseRequested => {
                             *control_flow = ControlFlow::Exit
                         },
-                        | WindowEvent::KeyboardInput { input, .. } => {
+                        WindowEvent::KeyboardInput { input, .. } => {
                             match input {
-                                | KeyboardInput { virtual_keycode, state, .. } => {
+                                KeyboardInput { virtual_keycode, state, .. } => {
                                     match (virtual_keycode, state) {
-                                        | (Some(VirtualKeyCode::Escape), ElementState::Pressed) => {
+                                        (Some(VirtualKeyCode::Escape), ElementState::Pressed) => {
                                             *control_flow = ControlFlow::Exit
                                         },
-                                        | _ => {},
+                                        _ => {},
                                     }
                                 },
                             }
-                        },
-                        | _ => {},
+                        }
+                        _ => {},
                     }
                 },
-                | Event::MainEventsCleared => {
-                    self.update();
+                Event::MainEventsCleared => {
+                    self.update((std::time::Instant::now() - start).as_secs_f32());
                     window.request_redraw();
                 },
-                | Event::RedrawRequested(_window_id) => {
+                Event::RedrawRequested(_window_id) => {
                     self.render(ash::vk::Extent2D { 
                         width: window.inner_size().width,
                         height: window.inner_size().height
                     });
                 },
-                | Event::LoopDestroyed => {
+                Event::LoopDestroyed => {
                     unsafe {
                         self.context.device.device_wait_idle().expect("Failed to wait device idle!")
                     };
@@ -421,15 +485,17 @@ impl OxiTrace {
 
 impl Drop for OxiTrace {
     fn drop(&mut self) {
-        self.render_target.destroy(&self.context.device);
+        self.render_target.destroy(&self.context.device, self.context.allocator.as_mut().unwrap());
 
         for descriptor_set in self.descriptor_sets.iter() {
             self.context.descriptor_pool.deallocate(&self.context.device, descriptor_set);
         }
         
-        for ub in self.uniform_buffers.iter_mut() {
-            ub.destroy(&self.context.device, &mut self.context.allocator.as_mut().unwrap());
+        for camera_buffer in self.camera_buffers.iter_mut() {
+            camera_buffer.destroy(&self.context.device, self.context.allocator.as_mut().unwrap());
         }
+
+        self.scene_buffer.destroy(&self.context.device, self.context.allocator.as_mut().unwrap());
 
         for fence in &self.in_flight_fences {
             fence.destroy(&self.context.device);

@@ -37,6 +37,10 @@ impl VkPhysicalDevice {
 
         println!("Picked {} as the vulkan physical device.", result.name);
 
+        println!("\tGraphics queue index: {}", result.queue_family_indices.graphics.unwrap());
+        println!("\tPresent queue index: {}", result.queue_family_indices.present.unwrap());
+        println!("\tTransfer queue index: {}", result.queue_family_indices.transfer.unwrap());
+
         result 
     }
 

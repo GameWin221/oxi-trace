@@ -1,15 +1,152 @@
 #version 450
 
-layout (binding = 0, rgba8) uniform image2D RenderTarget;
+#define SAMPLES_PER_PIXEL 100
+#define ANTIALIAS_STRENGTH 2.0
+
+#include "random.glsl"
+
+struct Camera {
+    vec3 position;
+    vec3 horizontal;
+    vec3 vertical;
+    vec3 lowerLeftCorner;
+    vec2 size;
+};
+
+struct Sphere {
+    vec3 position;
+    float radius;
+};
+
+struct Ray {
+    vec3 origin;
+    vec3 direction;
+};
+
+struct HitResult {
+    vec3 point;
+    vec3 normal;
+
+    float t;
+
+    bool front;
+    bool hit;
+};
+
+layout (set = 0, binding = 0, rgba8) uniform image2D RenderTarget;
+
+layout(set = 0, binding = 1) uniform WorldBuffer {
+    Sphere spheres[64];
+    uint sphereCount;
+};
+
+layout(set = 0, binding = 2) uniform CameraBuffer {
+    Camera camera;
+};
 
 layout (local_size_x = 4, local_size_y = 8, local_size_z =  1) in;
+
+vec3 atRay(Ray ray, float t)
+{
+    return ray.origin + ray.direction * t;
+}
+
+HitResult hitSphere(Sphere sphere, Ray ray, float tMin, float tMax) 
+{
+    vec3 oc = ray.origin - sphere.position;
+    float a = ray.direction.x*ray.direction.x+ray.direction.y*ray.direction.y+ray.direction.z*ray.direction.z;
+    float half_b = dot(oc, ray.direction);
+    float c = oc.x * oc.x + oc.y * oc.y + oc.z * oc.z - sphere.radius * sphere.radius;
+
+    float discriminant = half_b * half_b - a * c;
+
+    HitResult hitResult = HitResult(
+        vec3(0.0, 0.0, 0.0),
+        vec3(0.0, 0.0, 0.0),
+        0.0,
+        false,
+        false
+    );
+
+    if (discriminant < 0.0) 
+        return hitResult;
+    
+    float sqrtd = sqrt(discriminant);
+
+    float root = (-half_b - sqrtd) / a;
+    if (root < tMin || tMax < root) {
+        root = (-half_b + sqrtd) / a;
+        if (root < tMin || tMax < root)
+            return hitResult;
+    }
+
+    vec3 p = atRay(ray, root);
+    vec3 n = (p - sphere.position) / sphere.radius;
+
+    hitResult.hit = true;
+    hitResult.t = root;
+    hitResult.point = p;
+    hitResult.front = dot(ray.direction, n) < 0.0;
+    hitResult.normal = hitResult.front ? n : -n;
+
+    return hitResult;
+}
+
+HitResult hitWorld(Ray ray, float tMin, float tMax) 
+{
+    HitResult result = HitResult(
+        vec3(0.0, 0.0, 0.0),
+        vec3(0.0, 0.0, 0.0),
+        tMax,
+        false,
+        false
+    );
+
+    for (uint i = 0; i < sphereCount; i++) 
+    {
+        HitResult current = hitSphere(spheres[i], ray, tMin, result.t);
+
+        if (current.hit)
+            result = current;
+    }
+
+    return result;
+}
+
+vec3 rayColor(Ray ray) {
+    HitResult hitResult = hitWorld(ray, 0.0, 10000.0);
+
+    if (hitResult.hit) 
+        return hitResult.normal * 0.5 + 0.5;
+
+    float t = 0.5 * (normalize(ray.direction).y + 1.0);
+
+    return (1.0-t) * vec3(1.0, 1.0, 1.0) + t*vec3(0.5, 0.7, 1.0);
+}
 
 void main()
 {
     ivec2 xy = ivec2(gl_GlobalInvocationID.xy);
     ivec2 size = imageSize(RenderTarget);
     vec2 uv = vec2(float(xy.x) / size.x, float(xy.y) / size.y);
-    
 
-    imageStore(RenderTarget, xy, vec4(uv, 0.0, 1.0));
+    uint seed = (xy.x+51252) * 758217 + (xy.y+146728) * 184214798;
+
+    vec3 color = vec3(0.0);
+    for (uint i = 0; i < SAMPLES_PER_PIXEL; i++)
+    {
+        Ray ray = Ray(
+            camera.position, 
+            camera.lowerLeftCorner + 
+            (uv.x + randomFloat(seed)*ANTIALIAS_STRENGTH/float(size.x)) * camera.horizontal + 
+            (uv.y + randomFloat(seed)*ANTIALIAS_STRENGTH/float(size.y)) * camera.vertical - 
+            camera.position
+        );
+
+        color += rayColor(ray);
+    }
+
+    color /= SAMPLES_PER_PIXEL;
+
+    imageStore(RenderTarget, xy, vec4(color, 1.0));
 }
