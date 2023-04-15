@@ -1,9 +1,11 @@
 #version 450
 
 #define SAMPLES_PER_PIXEL 100
-#define ANTIALIAS_STRENGTH 2.0
+#define MAX_BOUNCES 16
+#define ANTIALIAS_STRENGTH 1.5
+#define GAMMA 2.2
 
-#include "random.glsl"
+#include "Random.glsl"
 
 struct Camera {
     vec3 position;
@@ -11,11 +13,22 @@ struct Camera {
     vec3 vertical;
     vec3 lowerLeftCorner;
     vec2 size;
+    uint frameIndex;
+    float exposure;
+};
+
+struct Material {
+    uint type; // Lambertian, Metal, Dielectric
+    vec3 color;
+    float fuzz;
+    float emmision;
+    float ior;
 };
 
 struct Sphere {
     vec3 position;
     float radius;
+    uint material;
 };
 
 struct Ray {
@@ -27,6 +40,8 @@ struct HitResult {
     vec3 point;
     vec3 normal;
 
+    uint material;
+
     float t;
 
     bool front;
@@ -36,6 +51,7 @@ struct HitResult {
 layout (set = 0, binding = 0, rgba8) uniform image2D RenderTarget;
 
 layout(set = 0, binding = 1) uniform WorldBuffer {
+    Material materials[64];
     Sphere spheres[64];
     uint sphereCount;
 };
@@ -46,12 +62,12 @@ layout(set = 0, binding = 2) uniform CameraBuffer {
 
 layout (local_size_x = 4, local_size_y = 8, local_size_z =  1) in;
 
-vec3 atRay(Ray ray, float t)
+vec3 AtRay(Ray ray, float t)
 {
     return ray.origin + ray.direction * t;
 }
 
-HitResult hitSphere(Sphere sphere, Ray ray, float tMin, float tMax) 
+HitResult HitSphere(Sphere sphere, Ray ray, float tMin, float tMax) 
 {
     vec3 oc = ray.origin - sphere.position;
     float a = ray.direction.x*ray.direction.x+ray.direction.y*ray.direction.y+ray.direction.z*ray.direction.z;
@@ -63,6 +79,7 @@ HitResult hitSphere(Sphere sphere, Ray ray, float tMin, float tMax)
     HitResult hitResult = HitResult(
         vec3(0.0, 0.0, 0.0),
         vec3(0.0, 0.0, 0.0),
+        0,
         0.0,
         false,
         false
@@ -80,9 +97,10 @@ HitResult hitSphere(Sphere sphere, Ray ray, float tMin, float tMax)
             return hitResult;
     }
 
-    vec3 p = atRay(ray, root);
+    vec3 p = AtRay(ray, root);
     vec3 n = (p - sphere.position) / sphere.radius;
 
+    hitResult.material = sphere.material;
     hitResult.hit = true;
     hitResult.t = root;
     hitResult.point = p;
@@ -92,11 +110,12 @@ HitResult hitSphere(Sphere sphere, Ray ray, float tMin, float tMax)
     return hitResult;
 }
 
-HitResult hitWorld(Ray ray, float tMin, float tMax) 
+HitResult HitWorld(Ray ray, float tMin, float tMax) 
 {
     HitResult result = HitResult(
         vec3(0.0, 0.0, 0.0),
         vec3(0.0, 0.0, 0.0),
+        0,
         tMax,
         false,
         false
@@ -104,7 +123,7 @@ HitResult hitWorld(Ray ray, float tMin, float tMax)
 
     for (uint i = 0; i < sphereCount; i++) 
     {
-        HitResult current = hitSphere(spheres[i], ray, tMin, result.t);
+        HitResult current = HitSphere(spheres[i], ray, tMin, result.t);
 
         if (current.hit)
             result = current;
@@ -113,15 +132,77 @@ HitResult hitWorld(Ray ray, float tMin, float tMax)
     return result;
 }
 
-vec3 rayColor(Ray ray) {
-    HitResult hitResult = hitWorld(ray, 0.0, 10000.0);
+float SchlickReflectance(float cosine, float idx)
+{
+    float r0 = (1.0-idx) / (1.0+idx);
+    r0 = r0*r0;
 
-    if (hitResult.hit) 
-        return hitResult.normal * 0.5 + 0.5;
+    return r0 + (1.0-r0)* pow((1.0 - cosine), 5);
+}
 
-    float t = 0.5 * (normalize(ray.direction).y + 1.0);
+vec3 SkyColor(vec3 direction)
+{
+    float sky = 0.5 * (normalize(direction).y + 1.0);
+    vec3 skyColor = (1.0-sky) * vec3(1.0, 1.0, 1.0) + sky*vec3(0.5, 0.7, 1.0);
 
-    return (1.0-t) * vec3(1.0, 1.0, 1.0) + t*vec3(0.5, 0.7, 1.0);
+    return skyColor;
+}
+
+vec3 RayColor(Ray ray, inout uint seed)
+{
+    vec3 color = vec3(1.0);
+    vec3 accumulatedLight = vec3(0.0);
+
+    for(uint i = 0; i <= MAX_BOUNCES; i++)
+    {
+        HitResult result = HitWorld(ray, 0.001, 10000.0);
+        if(result.hit)
+        {
+            bool scattered = false;
+            Material material = materials[result.material];
+
+            ray.origin = result.point;
+
+            if(material.type == 0) // Lambertian
+            {
+                ray.direction = RandomVec3Hemisphere(seed, result.normal);
+
+                scattered = true;
+            }
+            else if(material.type == 1) // Metal
+            {
+                ray.direction = reflect(normalize(ray.direction), result.normal) + material.fuzz * RandomVec3Hemisphere(seed, result.normal);
+
+                scattered = (dot(ray.direction, result.normal) > 0.0);
+            }
+            else if(material.type == 2) // Dielectric
+            {
+                float refractionRatio = result.front ? 1.0 / material.ior : material.ior;
+    
+                float cosTheta = min(dot(-ray.direction, result.normal), 1.0);
+                float sinTheta = sqrt(1.0 - cosTheta * cosTheta);
+
+                bool cannotRefract = (refractionRatio * sinTheta > 1.0) || SchlickReflectance(cosTheta, refractionRatio) > RandomFloat(seed);
+                ray.direction = cannotRefract ? reflect(ray.direction, result.normal) : refract(ray.direction, result.normal, refractionRatio);
+                scattered = (dot(ray.direction, result.normal) > 0.0);
+            }
+            else if(material.type == 3) // Emmision
+            {
+                accumulatedLight += material.color * material.emmision;
+                break;
+            }
+
+            if (scattered)
+                color *= material.color;
+        }
+        else
+        {
+            accumulatedLight += SkyColor(ray.direction) * color;
+            break;
+        }
+    }
+
+    return accumulatedLight;
 }
 
 void main()
@@ -130,23 +211,28 @@ void main()
     ivec2 size = imageSize(RenderTarget);
     vec2 uv = vec2(float(xy.x) / size.x, float(xy.y) / size.y);
 
-    uint seed = (xy.x+51252) * 758217 + (xy.y+146728) * 184214798;
+    uint seed = (xy.x+51252) * 758217 + (xy.y+146728) * 184214798 + camera.frameIndex * 124124;
 
     vec3 color = vec3(0.0);
     for (uint i = 0; i < SAMPLES_PER_PIXEL; i++)
     {
         Ray ray = Ray(
             camera.position, 
-            camera.lowerLeftCorner + 
-            (uv.x + randomFloat(seed)*ANTIALIAS_STRENGTH/float(size.x)) * camera.horizontal + 
-            (uv.y + randomFloat(seed)*ANTIALIAS_STRENGTH/float(size.y)) * camera.vertical - 
-            camera.position
+            normalize(camera.lowerLeftCorner + 
+            (uv.x + RandomFloat(seed)*ANTIALIAS_STRENGTH/float(size.x)) * camera.horizontal + 
+            (uv.y + RandomFloat(seed)*ANTIALIAS_STRENGTH/float(size.y)) * camera.vertical - 
+            camera.position)
         );
 
-        color += rayColor(ray);
+        color += RayColor(ray, seed);
     }
 
     color /= SAMPLES_PER_PIXEL;
 
-    imageStore(RenderTarget, xy, vec4(color, 1.0));
+    color = vec3(1.0) - exp(-color * camera.exposure);
+    color = pow(color, vec3(1.0/GAMMA));
+
+    vec3 previous = imageLoad(RenderTarget, xy).rgb;
+    float weight = 0.001 + 1.0 / min(camera.frameIndex + 1, 100000);
+    imageStore(RenderTarget, xy, vec4(mix(previous, color, weight), 1.0));
 }

@@ -174,13 +174,16 @@ impl VkSwapchain {
     }
 
     fn choose_swapchain_present_mode(available_present_modes: &Vec<ash::vk::PresentModeKHR>) -> ash::vk::PresentModeKHR {
-        if let Some(&present_mode) = available_present_modes.iter().find(
-            |&mode| *mode == ash::vk::PresentModeKHR::MAILBOX
-        ) {
-            present_mode
-        } else {
-            ash::vk::PresentModeKHR::FIFO
-        }
+        //if let Some(&present_mode) = available_present_modes.iter().find(
+        //    |&mode| *mode == ash::vk::PresentModeKHR::MAILBOX
+        //) {
+        //    present_mode
+        //} else {
+        //    ash::vk::PresentModeKHR::FIFO
+        //}
+        
+        // VSync
+        ash::vk::PresentModeKHR::FIFO
     }
 
     fn choose_swapchain_extent(desired_extent: ash::vk::Extent2D, capabilities: &ash::vk::SurfaceCapabilitiesKHR) -> ash::vk::Extent2D {

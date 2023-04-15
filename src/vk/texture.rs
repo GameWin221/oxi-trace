@@ -211,4 +211,20 @@ impl VkTexture {
                 device.cmd_copy_image(command_buffer.handle, self.handle, self.layout, target_image, target_layout, &[region]);
         }
     }
+
+    pub fn clear(&self, device: &ash::Device, command_buffer: &VkCommandBuffer, clear_color: cgmath::Vector4<f32>) {
+        let range = ash::vk::ImageSubresourceRange::builder()
+            .aspect_mask(self.aspect)
+            .level_count(1)
+            .layer_count(1)
+            .build();
+
+        let clear_value = ash::vk::ClearColorValue{
+            float32: clear_color.into(),
+        };
+
+        unsafe {
+            device.cmd_clear_color_image(command_buffer.handle, self.handle, self.layout, &clear_value, &[range]);
+        }
+    }
 }

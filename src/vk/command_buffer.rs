@@ -34,6 +34,12 @@ impl VkCommandBuffer {
         }
     }
 
+    pub fn reset(&self, device: &ash::Device) {
+        unsafe {
+            device.reset_command_buffer(self.handle, ash::vk::CommandBufferResetFlags::RELEASE_RESOURCES).expect("Failed to reset command buffers");
+        }
+    }
+
     pub fn begin_renderpass(&mut self, device: &ash::Device, render_pass: &VkRenderPass, framebuffer: &VkFramebuffer) {
         let clear_values = [ash::vk::ClearValue {
             color: ash::vk::ClearColorValue {
