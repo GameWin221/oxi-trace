@@ -8,7 +8,7 @@ pub struct MaterialRaw {
     ior: [f32; 3],
 }
 
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy, PartialEq)]
 pub struct Lambertian {
     pub color: cgmath::Vector3<f32>
 }
@@ -25,7 +25,7 @@ impl Lambertian {
     }
 }
 
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy, PartialEq)]
 pub struct Metal {
     pub color: cgmath::Vector3<f32>,
     pub fuzz: f32
@@ -43,7 +43,7 @@ impl Metal {
     }
 }
 
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy, PartialEq)]
 pub struct Dielectric {
     pub color: cgmath::Vector3<f32>,
     pub ior: f32
@@ -61,7 +61,7 @@ impl Dielectric {
     }
 }
 
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy, PartialEq)]
 pub struct Emmisive {
     pub color: cgmath::Vector3<f32>,
     pub intensity: f32
@@ -77,4 +77,12 @@ impl Emmisive {
             ior: [0.0; 3],
         }
     }
+}
+
+#[derive(PartialEq)]
+pub enum Material {
+    Lambertian(Lambertian),
+    Dielectric(Dielectric),
+    Metal(Metal),
+    Emmisive(Emmisive),
 }

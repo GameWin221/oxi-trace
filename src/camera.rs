@@ -59,7 +59,7 @@ impl Camera {
         self.fov = self.fov.clamp(10.0, 120.0);
     }
 
-    pub fn to_raw(&self, frame_index: u32) -> CameraRaw {
+    pub fn to_raw(&self, frames_since_start: u32) -> CameraRaw {
         let aspect_ratio = self.size.x / self.size.y;
         let viewport_height = 2.0 * (self.fov / 2.0).tan();
         let viewport_width = aspect_ratio * viewport_height;
@@ -76,7 +76,7 @@ impl Camera {
             vertical: vertical.extend(0.0).into(),
             lower_left_corner: lower_left_corner.extend(0.0).into(),
             size: self.size.into(),
-            frame_index: [frame_index; 1],
+            frame_index: [frames_since_start; 1],
             exposure: [self.exposure; 1]
         }
     }

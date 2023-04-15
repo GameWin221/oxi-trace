@@ -1,0 +1,175 @@
+#version 450
+
+#define GAMMA 2.2
+
+struct Camera {
+    vec3 position;
+    vec3 horizontal;
+    vec3 vertical;
+    vec3 lowerLeftCorner;
+    vec2 size;
+    uint frameIndex;
+    float exposure;
+};
+
+struct Material {
+    uint type; // Lambertian, Metal, Dielectric
+    vec3 color;
+    float fuzz;
+    float emmision;
+    float ior;
+};
+
+struct Sphere {
+    vec3 position;
+    float radius;
+    uint material;
+};
+
+struct Ray {
+    vec3 origin;
+    vec3 direction;
+};
+
+struct HitResult {
+    vec3 point;
+    vec3 normal;
+
+    uint material;
+
+    float t;
+
+    bool front;
+    bool hit;
+};
+
+layout (set = 0, binding = 0, rgba8) uniform image2D RenderTarget;
+
+layout(set = 0, binding = 1) uniform WorldBuffer {
+    Material materials[64];
+    Sphere spheres[64];
+    uint sphereCount;
+};
+
+layout(set = 0, binding = 2) uniform CameraBuffer {
+    Camera camera;
+};
+
+layout (local_size_x = 4, local_size_y = 8, local_size_z =  1) in;
+
+vec3 AtRay(Ray ray, float t)
+{
+    return ray.origin + ray.direction * t;
+}
+
+HitResult HitSphere(Sphere sphere, Ray ray, float tMin, float tMax) 
+{
+    vec3 oc = ray.origin - sphere.position;
+    float a = ray.direction.x*ray.direction.x+ray.direction.y*ray.direction.y+ray.direction.z*ray.direction.z;
+    float half_b = dot(oc, ray.direction);
+    float c = oc.x * oc.x + oc.y * oc.y + oc.z * oc.z - sphere.radius * sphere.radius;
+
+    float discriminant = half_b * half_b - a * c;
+
+    HitResult hitResult = HitResult(
+        vec3(0.0, 0.0, 0.0),
+        vec3(0.0, 0.0, 0.0),
+        0,
+        0.0,
+        false,
+        false
+    );
+
+    if (discriminant < 0.0) 
+        return hitResult;
+    
+    float sqrtd = sqrt(discriminant);
+
+    float root = (-half_b - sqrtd) / a;
+    if (root < tMin || tMax < root) {
+        root = (-half_b + sqrtd) / a;
+        if (root < tMin || tMax < root)
+            return hitResult;
+    }
+
+    vec3 p = AtRay(ray, root);
+    vec3 n = (p - sphere.position) / sphere.radius;
+
+    hitResult.material = sphere.material;
+    hitResult.hit = true;
+    hitResult.t = root;
+    hitResult.point = p;
+    hitResult.front = dot(ray.direction, n) < 0.0;
+    hitResult.normal = hitResult.front ? n : -n;
+
+    return hitResult;
+}
+
+HitResult HitWorld(Ray ray, float tMin, float tMax) 
+{
+    HitResult result = HitResult(
+        vec3(0.0, 0.0, 0.0),
+        vec3(0.0, 0.0, 0.0),
+        0,
+        tMax,
+        false,
+        false
+    );
+
+    for (uint i = 0; i < sphereCount; i++) 
+    {
+        HitResult current = HitSphere(spheres[i], ray, tMin, result.t);
+
+        if (current.hit)
+            result = current;
+    }
+
+    return result;
+}
+
+vec3 SkyColor(vec3 direction)
+{
+    float sky = 0.5 * (normalize(direction).y + 1.0);
+    vec3 skyColor = (1.0-sky) * vec3(1.0, 1.0, 1.0) + sky*vec3(0.5, 0.7, 1.0);
+
+    return skyColor;
+}
+
+vec3 RayColor(Ray ray)
+{
+    vec3 color = vec3(1.0);
+
+    HitResult result = HitWorld(ray, 0.001, 10000.0);
+    if(result.hit)
+    {
+        Material material = materials[result.material];
+
+        color = material.color;
+    }
+    else
+        color = SkyColor(ray.direction) * color;
+
+    return color;
+}
+
+void main()
+{
+    ivec2 xy = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(RenderTarget);
+    vec2 uv = vec2(float(xy.x) / size.x, float(xy.y) / size.y);
+
+    Ray ray = Ray(
+        camera.position, 
+        normalize(camera.lowerLeftCorner + 
+        uv.x * camera.horizontal + 
+        uv.y * camera.vertical - 
+        camera.position)
+    );
+
+    vec3 color = RayColor(ray);
+
+    color = vec3(1.0) - exp(-color * camera.exposure);
+    color = pow(color, vec3(1.0/GAMMA));
+
+    imageStore(RenderTarget, xy, vec4(color, 1.0));
+}
