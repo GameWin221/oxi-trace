@@ -1,11 +1,29 @@
 #version 450
 
-#define SAMPLES_PER_PIXEL 100
-#define MAX_BOUNCES 16
+#define SAMPLES_PER_PIXEL 80
+#define MAX_BOUNCES 12
 #define ANTIALIAS_STRENGTH 1.5
 #define GAMMA 2.2
 
+#define MAX_MESHES 64
+#define MAX_VERTICES 1024*4
+#define MAX_INDICES 1024*16
+#define MAX_MATERIALS 64
+#define MAX_SPHERES 64
+
 #include "Random.glsl"
+
+struct Vertex {
+    vec4 position;
+    vec4 normal;
+};
+
+struct Mesh {
+    uint vertexCount;
+    uint indexCount;
+    uint firstIndex;
+    uint materialIndex;
+};
 
 struct Camera {
     vec3 position;
@@ -50,10 +68,16 @@ struct HitResult {
 
 layout (set = 0, binding = 0, rgba8) uniform image2D RenderTarget;
 
-layout(set = 0, binding = 1) uniform WorldBuffer {
-    Material materials[64];
-    Sphere spheres[64];
+layout(set = 0, std430, binding = 1) buffer WorldBuffer {
+    Material materials[MAX_MATERIALS];
+    Sphere spheres[MAX_SPHERES];
     uint sphereCount;
+
+    Vertex vertices[MAX_VERTICES];
+    uint indices[MAX_INDICES];
+
+    Mesh meshes[MAX_MESHES];
+    uint meshCount;
 };
 
 layout(set = 0, binding = 2) uniform CameraBuffer {
@@ -65,6 +89,56 @@ layout (local_size_x = 4, local_size_y = 8, local_size_z =  1) in;
 vec3 AtRay(Ray ray, float t)
 {
     return ray.origin + ray.direction * t;
+}
+
+HitResult HitTriangle(Vertex v0, Vertex v1, Vertex v2, uint material, Ray ray, float tMin, float tMax) 
+{
+    vec3 edge01 = v1.position.xyz - v0.position.xyz;
+    vec3 edge02 = v2.position.xyz - v0.position.xyz;
+
+    vec3 h = cross(ray.direction, edge02);
+    float a = dot(edge01, h);
+
+    HitResult hitResult;
+    hitResult.hit = false;
+    hitResult.front = true;
+
+    if (a > 0.0)
+        return hitResult;
+
+    // Ray is parallel to the triangle
+    if (a > -0.0000001 && a < 0.0000001)
+        return hitResult;
+
+    vec3 s = ray.origin - v0.position.xyz;
+    float u = dot(s, h) / a;
+
+    if (u < 0.0 || u > 1.0)
+        return hitResult;
+
+    vec3 q = cross(s, edge01);
+    float v = dot(ray.direction, q) / a;
+
+    if (v < 0.0 || u + v > 1.0)
+        return hitResult;
+
+    float w = 1.0 - u - v;
+
+    // At this stage we can compute t to find out where the intersection point is on the line.
+    float t = dot(edge02, q) / a;
+
+    if (t > tMin && t < tMax)
+    {
+        hitResult.material = material;
+        hitResult.t = t;
+        hitResult.normal = u * v0.normal.xyz + v * v1.normal.xyz + w * v2.normal.xyz;
+        hitResult.point = ray.origin + ray.direction * t;
+        hitResult.hit = true;
+
+        return hitResult;
+    }
+    else // This means that there is a line intersection but not a ray intersection.
+        return hitResult;
 }
 
 HitResult HitSphere(Sphere sphere, Ray ray, float tMin, float tMax) 
@@ -129,6 +203,22 @@ HitResult HitWorld(Ray ray, float tMin, float tMax)
             result = current;
     }
 
+    //for (uint i = 0; i < meshCount; i++) 
+    //{
+    //    Mesh mesh = meshes[i];
+    //    for (uint j = 0; j < mesh.indexCount; j += 3) 
+    //    {
+    //        Vertex v0 = vertices[indices[j+0]];
+    //        Vertex v1 = vertices[indices[j+1]];
+    //        Vertex v2 = vertices[indices[j+2]];
+//
+    //        HitResult current = HitTriangle(v0, v1, v2, mesh.materialIndex, ray, tMin, result.t);
+//
+    //        if (current.hit)
+    //            result = current;
+    //    }
+    //}
+
     return result;
 }
 
@@ -143,7 +233,7 @@ float SchlickReflectance(float cosine, float idx)
 vec3 SkyColor(vec3 direction)
 {
     float sky = 0.5 * (normalize(direction).y + 1.0);
-    vec3 skyColor = (1.0-sky) * vec3(1.0, 1.0, 1.0) + sky*vec3(0.5, 0.7, 1.0);
+    vec3 skyColor = (1.0-sky) * vec3(1.0, 1.0, 1.0) + sky*vec3(0.25, 0.4, 1.0);
 
     return skyColor;
 }
@@ -188,7 +278,7 @@ vec3 RayColor(Ray ray, inout uint seed)
             }
             else if(material.type == 3) // Emmision
             {
-                accumulatedLight += material.color * material.emmision;
+                accumulatedLight += material.color * material.emmision * color;
                 break;
             }
 

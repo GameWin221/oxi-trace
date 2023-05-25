@@ -8,7 +8,6 @@ use crate::{
         renderpass::*,
         vertex::Vertex
     }
-
 };
 
 pub struct VkGraphicsPipeline {

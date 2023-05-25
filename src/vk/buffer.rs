@@ -59,6 +59,13 @@ impl VkBuffer {
             std::ptr::copy_nonoverlapping(data.as_ptr(), dst_ptr, data.len());
         }
     }
+    pub fn fill_raw<T>(&mut self, data: *const T, count: usize) {
+        unsafe {
+            let dst_ptr = self.allocation.as_ref().unwrap().mapped_ptr().unwrap().cast().as_ptr();
+
+            std::ptr::copy_nonoverlapping(data, dst_ptr, count);
+        }
+    }
     
     pub fn copy_to_buffer(&mut self, command_buffer: &VkCommandBuffer, other: &Self, device: &ash::Device) {
         unsafe {

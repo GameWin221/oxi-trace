@@ -91,8 +91,8 @@ impl Renderer {
         let scene_buffer = VkBuffer::new(
             &context.device,
             &mut context.allocator.as_mut().unwrap(),
-            std::mem::size_of::<SceneRaw>() as u64,
-            ash::vk::BufferUsageFlags::UNIFORM_BUFFER | ash::vk::BufferUsageFlags::TRANSFER_DST,
+            std::mem::size_of::<Scene>() as u64,
+            ash::vk::BufferUsageFlags::STORAGE_BUFFER | ash::vk::BufferUsageFlags::TRANSFER_DST,
             MemoryLocation::GpuOnly
         );
 
@@ -124,7 +124,7 @@ impl Renderer {
                 VkDescriptorSetSlot{
                     binding: ash::vk::DescriptorSetLayoutBinding {
                         binding: 1,
-                        descriptor_type: ash::vk::DescriptorType::UNIFORM_BUFFER,
+                        descriptor_type: ash::vk::DescriptorType::STORAGE_BUFFER,
                         descriptor_count: 1,
                         stage_flags: ash::vk::ShaderStageFlags::COMPUTE,
                         p_immutable_samplers: std::ptr::null(),
@@ -197,19 +197,19 @@ impl Renderer {
 
             render_target,
             should_reset_rt: false,
-            preview_mode: false,
+            preview_mode: true,
         }
     }
-    pub fn bind_scene(&mut self, scene: &Scene) {
+    pub fn bind_scene(&mut self, scene: Scene) {
         let mut staging_scene_buffer = VkBuffer::new(
             &self.context.device,
             &mut self.context.allocator.as_mut().unwrap(),
-            std::mem::size_of::<SceneRaw>() as u64,
+            std::mem::size_of::<Scene>() as u64,
             ash::vk::BufferUsageFlags::TRANSFER_SRC,
             MemoryLocation::CpuToGpu
         );
 
-        staging_scene_buffer.fill(&[scene.to_raw()]);
+        staging_scene_buffer.fill_raw(&scene, 1);
 
         let cmd = utilities::begin_single_queue_submit(&self.context.device, &self.context.transfer_command_pool);
         staging_scene_buffer.copy_to_buffer(&cmd, &self.scene_buffer, &self.context.device);

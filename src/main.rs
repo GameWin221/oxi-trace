@@ -1,7 +1,7 @@
 use cgmath::{Zero, InnerSpace};
 
 use renderer::Renderer;
-use scene::{Scene, Sphere};
+use scene::*;
 use winit::dpi::{PhysicalPosition};
 use winit::event::{Event, VirtualKeyCode, ElementState, KeyboardInput, WindowEvent, MouseScrollDelta};
 use winit::event_loop::{EventLoop, ControlFlow};
@@ -12,6 +12,7 @@ mod camera;
 mod material;
 mod renderer;
 mod scene;
+mod obj_loader;
 
 use camera::*;
 use material::*;
@@ -20,7 +21,6 @@ use winit::window::WindowButtons;
 
 pub struct OxiTrace {
     camera: Camera,
-    scene: Scene,
     renderer: Renderer,
 
     scroll_delta: f32,
@@ -46,10 +46,10 @@ impl OxiTrace {
 
         let spheres = vec![
             Sphere::new(cgmath::vec3(0.0, -100.5, 0.0), 100.0, 0),
+            Sphere::new(cgmath::vec3(50.0, 40.0, 50.0), 20.0, 5),
             Sphere::new(cgmath::vec3(0.0, 0.0, 0.0), 0.5, 1),
             Sphere::new(cgmath::vec3(-1.0, 0.0, 0.0), 0.5, 2),
             Sphere::new(cgmath::vec3(1.0, 0.0, 0.0), 0.5, 3),
-            Sphere::new(cgmath::vec3(50.0, 40.0, 50.0), 20.0, 5),
         ];
 
         let materials = vec![
@@ -65,25 +65,43 @@ impl OxiTrace {
             }),
             Material::Metal(Metal {
                 color: cgmath::vec3(0.8, 0.6, 0.2),
-                fuzz: 1.0 
+                fuzz: 0.95
             }),
-            Material::Dielectric(Dielectric {
+            Material::Metal(Metal {
                 color: cgmath::vec3(1.0, 1.0, 1.0),
-                ior: 1.5
+                fuzz: 0.0
             }),
             Material::Emmisive(Emmisive{
-                color: cgmath::vec3(1.0, 0.4, 0.1),
-                intensity: 60.0,
-            })
+                color: cgmath::vec3(1.0, 0.5, 0.2),
+                intensity: 80.0,
+            }),
         ];
 
-        let scene = Scene::new(materials, spheres);
+        let offset = cgmath::vec3(1.5, -0.2, -3.0);
 
-        renderer.bind_scene(&scene);
+        let (vertices, indices) = obj_loader::load_from_file("res/model.obj").expect("Failed to load model!");
+
+        //let vertices = vec![
+        //    Vertex::new(cgmath::vec3(-1.0, -0.5, 0.0) + offset, cgmath::vec3(0.0, 0.0, 1.0)),
+        //    Vertex::new(cgmath::vec3(-1.0,  1.0, 0.0) + offset, cgmath::vec3(0.0, 0.0, 1.0)),
+        //    Vertex::new(cgmath::vec3( 1.0,  1.0, 0.0) + offset, cgmath::vec3(0.0, 0.0, 1.0)),
+        //    Vertex::new(cgmath::vec3( 1.0, -0.5, 0.0) + offset, cgmath::vec3(0.0, 0.0, 1.0)),
+        //];
+        //let indices = vec![
+        //    0,1,2,
+        //    0,2,3,
+        //];
+        
+        let meshes = vec![
+            Mesh::new(vertices.len() as u32, indices.len() as u32, 0, 4)
+        ];
+        
+        let scene = Box::new(Scene::new(materials, spheres, vertices, indices, meshes));
+
+        renderer.bind_scene(*scene);
 
         Self {
             camera,
-            scene,
             renderer,
 
             scroll_delta: 0.0,

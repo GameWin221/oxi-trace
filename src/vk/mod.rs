@@ -16,3 +16,4 @@ pub mod texture;
 pub mod descriptor_pool;
 pub mod graphics_pipeline;
 pub mod compute_pipeline;
+pub mod raytracing_pipeline;
